@@ -116,7 +116,7 @@ namespace FPTBook.Areas.Identity.Pages.Account
 
 
             [Required]
-            [Display(Name = "Home Address")]
+            [Display(Name = "Address")]
             public string Address { get; set; }
 
         }
@@ -135,7 +135,7 @@ namespace FPTBook.Areas.Identity.Pages.Account
             if (ModelState.IsValid)
             {
                 var user = CreateUser();
-
+                user.Address = Input.Address;
                 await _userStore.SetUserNameAsync(user, Input.Email, CancellationToken.None);
                 await _emailStore.SetEmailAsync(user, Input.Email, CancellationToken.None);
                 var result = await _userManager.CreateAsync(user, Input.Password);

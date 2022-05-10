@@ -1,4 +1,5 @@
-﻿#nullable disable
+﻿
+#nullable disable
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -18,6 +19,7 @@ namespace FPTBook.Controllers
     {
         private readonly FPTBookContext _context;
         private readonly int _recordsPerPage = 5;
+        private readonly int _recordsPerPages = 20;
         private readonly UserManager<FPTBookUser> _userManager;
 
         public BooksController(FPTBookContext context, UserManager<FPTBookUser> userManager)
@@ -32,19 +34,27 @@ namespace FPTBook.Controllers
         //    var userContext = _context.Book.Include(b => b.Store);
         //    return View(await userContext.ToListAsync());
         //}
+        [Authorize(Roles = "Customer")]
         public async Task<IActionResult> AddToCart(string isbn)
         {
             string thisUserId = _userManager.GetUserId(HttpContext.User);
-            Cart myCart = new Cart() { UId = thisUserId, BookIsbn = isbn };
+            Cart myCart = new Cart() { UId = thisUserId, BookIsbn = isbn, Quantity = 1 };
             Cart fromDb = _context.Cart.FirstOrDefault(c => c.UId == thisUserId && c.BookIsbn == isbn);
             //if not existing (or null), add it to cart. If already added to Cart before, ignore it.
-            if (fromDb == null)
+            if (fromDb != null)
+            {
+                fromDb.Quantity++;
+                _context.Update(fromDb);
+                await _context.SaveChangesAsync();
+            }
+            else
             {
                 _context.Add(myCart);
                 await _context.SaveChangesAsync();
             }
             return RedirectToAction("List");
         }
+        [Authorize(Roles = "Customer")]
         public async Task<IActionResult> Checkout()
         {
             string thisUserId = _userManager.GetUserId(HttpContext.User);
@@ -60,19 +70,19 @@ namespace FPTBook.Controllers
                     Order myOrder = new Order();
                     myOrder.UId = thisUserId;
                     myOrder.OrderDate = DateTime.Now;
-                    myOrder.Total = myDetailsInCart.Select(c => c.Book.Price)
-                        .Aggregate((c1, c2) => c1 + c2);
+                    myOrder.Total = myDetailsInCart.Select(c => c.Book.Price * c.Quantity)
+                        .Aggregate((c1, c2) => Math.Round((c1 + c2),1));
                     _context.Add(myOrder);
                     await _context.SaveChangesAsync();
-
                     //Step 2: insert all order details by var "myDetailsInCart"
+                    
                     foreach (var item in myDetailsInCart)
                     {
                         OrderDetail detail = new OrderDetail()
                         {
                             OrderId = myOrder.Id,
                             BookIsbn = item.BookIsbn,
-                            Quantity = 1
+                            Quantity = item.Quantity
                         };
                         _context.Add(detail);
                     }
@@ -89,40 +99,50 @@ namespace FPTBook.Controllers
                     Console.WriteLine("Error occurred in Checkout" + ex);
                 }
             }
-            return RedirectToAction("Index", "Cart");
+            return RedirectToAction("Index", "Carts");
         }
 
-
-        public async Task<IActionResult> Index(int id, string searchString = "" ) 
+        [Authorize(Roles = "Seller")]
+        public async Task<IActionResult> Index(int id, string searchString)
         {
-            var books = _context.Book
-                 .Where(s => s.Title.Contains(searchString) || s.Author.Contains(searchString));
             FPTBookUser thisUser = await _userManager.GetUserAsync(HttpContext.User);
             Store thisStore = await _context.Store.FirstOrDefaultAsync(s => s.UId == thisUser.Id);
+            var userContext = _context.Book.Where(b => b.StoreId == thisStore.Id).Include(b => b.Store);
+            var books1 = from b in userContext
+                         select b;
 
-            int numberOfRecords = await _context.Book.CountAsync();     //Count SQL
+            if (!String.IsNullOrEmpty(searchString))
+            {
+                books1 = books1.Where(s => s.Title!.Contains(searchString));
+            }
+            int numberOfRecords = await books1.CountAsync();     //Count SQL
             int numberOfPages = (int)Math.Ceiling((double)numberOfRecords / _recordsPerPage);
             ViewBag.numberOfPages = numberOfPages;
             ViewBag.currentPage = id;
-            ViewData["CurrentFilter"] = searchString;
-            List<Book> bookList = await _context.Book
+            List<Book> books = await books1
                 .Skip(id * _recordsPerPage)  //Offset SQL
                 .Take(_recordsPerPage)       //Top SQL
                 .ToListAsync();
-            return View(bookList);
+            return View(books);
         }
-        public async Task<IActionResult> List(int id)
+        [AllowAnonymous]
+        public async Task<IActionResult> List(int id, string searchString)
         {
-            FPTBookUser thisUser = await _userManager.GetUserAsync(HttpContext.User);
-            Store thisStore = await _context.Store.FirstOrDefaultAsync(s => s.UId == thisUser.Id);
 
-            int numberOfRecords = await _context.Book.CountAsync();     //Count SQL
-            int numberOfPages = (int)Math.Ceiling((double)numberOfRecords / _recordsPerPage);
+            var books1 = from b in _context.Book
+                         select b;
+
+            if (!String.IsNullOrEmpty(searchString))
+            {
+                books1 = books1.Where(s => s.Title!.Contains(searchString) || s.Category.Contains(searchString));
+            }
+            int numberOfRecords = await books1.CountAsync();     //Count SQL
+            int numberOfPages = (int)Math.Ceiling((double)numberOfRecords / _recordsPerPages);
             ViewBag.numberOfPages = numberOfPages;
             ViewBag.currentPage = id;
-            List<Book> books = await _context.Book
-                .Skip(id * _recordsPerPage)  //Offset SQL
-                .Take(_recordsPerPage)       //Top SQL
+            List<Book> books = await books1
+                .Skip(id * _recordsPerPages)  //Offset SQL
+                .Take(_recordsPerPages)       //Top SQL
                 .ToListAsync();
             return View(books);
         }
@@ -144,7 +164,7 @@ namespace FPTBook.Controllers
 
             return View(book);
         }
-
+        [Authorize(Roles = "Seller")]
         // GET: Books/Create
         public IActionResult Create()
         {
@@ -189,6 +209,7 @@ namespace FPTBook.Controllers
         }
 
         // GET: Books/Edit/5
+        [Authorize(Roles = "Seller")]
         public async Task<IActionResult> Edit(string id)
         {
             if (id == null)
@@ -210,6 +231,7 @@ namespace FPTBook.Controllers
         // For more details, see http://go.microsoft.com/fwlink/?LinkId=317598.
         [HttpPost]  // connect link
         [ValidateAntiForgeryToken]
+        [Authorize(Roles = "Seller")]
         public async Task<IActionResult> Edit(string id, [Bind("Isbn,Title,Pages,Author,Category,Price,Desc,ImgUrl")] Book book)
         {
             if (id != book.Isbn)
@@ -252,7 +274,7 @@ namespace FPTBook.Controllers
             ViewData["StoreId"] = new SelectList(_context.Store, "Id", "Id", book.StoreId);
             return View(book);
         }
-
+        [Authorize(Roles = "Seller")]
         // GET: Books/Delete/5
         public async Task<IActionResult> Delete(string id)
         {
@@ -275,6 +297,7 @@ namespace FPTBook.Controllers
         // POST: Books/Delete/5
         [HttpPost, ActionName("Delete")]
         [ValidateAntiForgeryToken]
+        [Authorize(Roles = "Seller")]
         public async Task<IActionResult> DeleteConfirmed(string id)
         {
             var book = await _context.Book.FindAsync(id);
