@@ -12,21 +12,32 @@ using FPTBook.Models;
 using Microsoft.AspNetCore.Identity;
 using FPTBook.Areas.Identity.Data;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity.UI.Services;
 
 namespace FPTBook.Controllers
 {
     public class BooksController : Controller
     {
         private readonly FPTBookContext _context;
+        private readonly IEmailSender _emailSender;
         private readonly int _recordsPerPage = 5;
         private readonly int _recordsPerPages = 20;
         private readonly UserManager<FPTBookUser> _userManager;
 
-        public BooksController(FPTBookContext context, UserManager<FPTBookUser> userManager)
+        public BooksController(FPTBookContext context, UserManager<FPTBookUser> userManager, IEmailSender emailSender)
         {
             _context = context;
             _userManager = userManager;
+            _emailSender = emailSender;
         }
+
+        [Authorize(Roles ="Customer")]
+        public async Task<IActionResult> Send()
+        {
+            await _emailSender.SendEmailAsync("hungntgcd19882@gmail.com", "Checkout Successfully", "Thank you for using our service");
+            return RedirectToAction("Index", "Carts");
+        }
+    
 
         // GET: Books
         //public async Task<IActionResult> Index()
@@ -99,7 +110,7 @@ namespace FPTBook.Controllers
                     Console.WriteLine("Error occurred in Checkout" + ex);
                 }
             }
-            return RedirectToAction("Index", "Carts");
+            return RedirectToAction("Send");
         }
 
         [Authorize(Roles = "Seller")]
