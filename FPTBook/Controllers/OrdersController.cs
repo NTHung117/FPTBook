@@ -1,5 +1,6 @@
 ﻿using FPTBook.Areas.Identity.Data;
 using FPTBook.Data;
+using FPTBook.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -27,7 +28,10 @@ namespace FPTBook.Controllers
         [Authorize(Roles = "Seller")]
         public async Task<IActionResult> Seller()
         {
-            var userContext = _context.Order.Include(o => o.User);
+            FPTBookUser thisUser = await _userManager.GetUserAsync(HttpContext.User);
+            Store thisStore = await _context.Store.FirstOrDefaultAsync(s => s.UId == thisUser.Id);
+            OrderDetail thisOrderDetail = _context.OrderDetail.FirstOrDefault(od => od.Book.StoreId == thisStore.Id);
+            var userContext = _context.Order.Where(o => o.Id == thisOrderDetail.OrderId).Include(o => o.User);
             return View(await userContext.ToListAsync());
         }
     }

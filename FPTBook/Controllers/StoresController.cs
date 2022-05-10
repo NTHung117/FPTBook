@@ -8,22 +8,26 @@ using Microsoft.AspNetCore.Mvc.Rendering;
 using Microsoft.EntityFrameworkCore;
 using FPTBook.Data;
 using FPTBook.Models;
+using FPTBook.Areas.Identity.Data;
+using Microsoft.AspNetCore.Identity;
 
 namespace FPTBook.Controllers
 {
     public class StoresController : Controller
     {
         private readonly FPTBookContext _context;
-
-        public StoresController(FPTBookContext context)
+        private readonly UserManager<FPTBookUser> _userManager;
+        public StoresController(FPTBookContext context, UserManager<FPTBookUser> userManager)
         {
             _context = context;
+            _userManager = userManager;
         }
 
         // GET: Stores
         public async Task<IActionResult> Index()
         {
-            var userContext = _context.Store.Include(s => s.User);
+            FPTBookUser thisUser = await _userManager.GetUserAsync(HttpContext.User);
+            var userContext = _context.Store.Include(s => s.User).Where(s => s.UId == thisUser.Id);
             return View(await userContext.ToListAsync());
         }
 
